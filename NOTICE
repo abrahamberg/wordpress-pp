@@ -1,0 +1,5 @@
+This repository builds and publishes container images that bundle WordPress.
+
+WordPress is a trademark of the WordPress Foundation. This project is not affiliated with or endorsed by the WordPress Foundation.
+
+This project preserves certain filesystem mount points (e.g. `/opt/bitnami`, `/bitnami`) as compatibility symlinks for existing charts and deployments.

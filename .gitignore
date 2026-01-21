@@ -1,0 +1,14 @@
+__pycache__/
+*.py[cod]
+*.swp
+.env
+.env.*
+.idea/
+.vscode/
+*.log
+
+# Local build/test artifacts
+dist/
+build/
+tmp/
+out/

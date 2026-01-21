@@ -1,0 +1,131 @@
+name: build-and-publish
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 3 * * *" # daily
+
+permissions:
+  contents: read
+
+env:
+  IMAGE_NAME: abrahamberg/wordpress-pp
+  PHP_TAG: "8.5"
+  WP_CLI_VERSION: "2.10.0"
+  # Default base image tags (update to match your DHI tag naming)
+  BASE_IMAGE_DEBIAN: dhi.io/php:${{ env.PHP_TAG }}-fpm
+  BASE_IMAGE_ALPINE: dhi.io/php:${{ env.PHP_TAG }}-fpm-alpine
+
+jobs:
+  resolve:
+    runs-on: ubuntu-latest
+    outputs:
+      wp_version: ${{ steps.wp.outputs.version }}
+      wp_sha1: ${{ steps.wp.outputs.sha1 }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - id: wp
+        name: Resolve latest WordPress
+        run: |
+          set -euo pipefail
+          WP_VERSION="$(python scripts/get_latest_wordpress.py)"
+          WP_SHA1="$(python scripts/get_wordpress_sha1.py --version "$WP_VERSION")"
+          echo "version=$WP_VERSION" >> "$GITHUB_OUTPUT"
+          echo "sha1=$WP_SHA1" >> "$GITHUB_OUTPUT"
+
+  build:
+    runs-on: ubuntu-latest
+    needs: [resolve]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - distro: debian
+            base_image: ${{ env.BASE_IMAGE_DEBIAN }}
+            rolling_tags: latest,debian
+          - distro: alpine
+            base_image: ${{ env.BASE_IMAGE_ALPINE }}
+            rolling_tags: alpine
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Login to DHI registry (optional)
+        if: ${{ secrets.DHI_USERNAME != '' && secrets.DHI_PASSWORD != '' }}
+        uses: docker/login-action@v3
+        with:
+          registry: dhi.io
+          username: ${{ secrets.DHI_USERNAME }}
+          password: ${{ secrets.DHI_PASSWORD }}
+
+      - id: base
+        name: Resolve hardened base digest
+        run: |
+          set -euo pipefail
+          DIGEST="$(python scripts/resolve_base_digest.py --image '${{ matrix.base_image }}')"
+          SHORT="${DIGEST#sha256:}"
+          SHORT="${SHORT:0:12}"
+          echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
+          echo "short=$SHORT" >> "$GITHUB_OUTPUT"
+
+      - id: tags
+        name: Compute tags
+        run: |
+          set -euo pipefail
+          WP_VERSION='${{ needs.resolve.outputs.wp_version }}'
+          DISTRO='${{ matrix.distro }}'
+          BASE_SHORT='${{ steps.base.outputs.short }}'
+
+          IFS=',' read -r -a rolling <<< '${{ matrix.rolling_tags }}'
+          TAGS=()
+          for t in "${rolling[@]}"; do TAGS+=("${{ env.IMAGE_NAME }}:${t}"); done
+
+          # WordPress-matching tags
+          TAGS+=("${{ env.IMAGE_NAME }}:${WP_VERSION}-${DISTRO}")
+          if [ "$DISTRO" = "debian" ]; then
+            TAGS+=("${{ env.IMAGE_NAME }}:${WP_VERSION}")
+          fi
+
+          # Base-digest tag (rebuilds even when WP unchanged)
+          TAGS+=("${{ env.IMAGE_NAME }}:${WP_VERSION}-${DISTRO}-base-${BASE_SHORT}")
+
+          printf 'tags<<EOF\n' >> "$GITHUB_OUTPUT"
+          printf '%s\n' "${TAGS[@]}" >> "$GITHUB_OUTPUT"
+          printf 'EOF\n' >> "$GITHUB_OUTPUT"
+
+      - name: Build and push (${{ matrix.distro }})
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          push: true
+          platforms: linux/amd64,linux/arm64
+          build-args: |
+            BASE_IMAGE=${{ matrix.base_image }}
+            WORDPRESS_VERSION=${{ needs.resolve.outputs.wp_version }}
+            WORDPRESS_SHA1=${{ needs.resolve.outputs.wp_sha1 }}
+            WP_CLI_VERSION=${{ env.WP_CLI_VERSION }}
+          tags: ${{ steps.tags.outputs.tags }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.base.digest=${{ steps.base.outputs.digest }}
+            org.opencontainers.image.version=${{ needs.resolve.outputs.wp_version }}
+            org.opencontainers.image.vendor=abrahamberg
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
