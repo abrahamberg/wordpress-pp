@@ -76,7 +76,9 @@ Secrets required:
 - `DOCKERHUB_USERNAME`
 - `DOCKERHUB_TOKEN`
 
-If `dhi.io` requires authentication in CI, also set:
+If `dhi.io` requires authentication in CI, the workflow will also use the same `DOCKERHUB_USERNAME` / `DOCKERHUB_TOKEN` to login to `dhi.io`.
+
+Optional override (only if you need different creds for `dhi.io`):
 
 - `DHI_USERNAME`
 - `DHI_PASSWORD`

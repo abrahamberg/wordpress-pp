@@ -60,6 +60,5 @@ User	Runs as root by default	Runs as nonroot user
 Attack surface	Larger due to additional utilities	Minimal, only essential components
 Debugging	Traditional shell debugging	Use Docker Debug or Image Mount for troubleshooting
 Apache support	mod_php available via apache2 variant	No mod_php support, FPM/FastCGI only
-Extension building tools	docker-php-ext-* helper scripts for easy extension installation	No helper scripts, but PHP source in $PHP_SRC_DIR and full phpize environment in -dev variant
-Extension installation	Simplified with docker-php-ext-install, docker-php-ext-configure	Manual installation using standard phpize/configure/make process
+Extension building tools	docker-php-ext-* helper scripts for easy extension installation	No helper scripts, but PHP source in $PHP_SRC_DIR and full phpize environment in -dev variantdocker pull bitnami/wordpress:sha256-b697155ef45b6ceb80e2bfdcc758e4ccf846dd4a523caefcc87934139ce6fc88configure/make process
 Why no shell or package manager?

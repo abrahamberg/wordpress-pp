@@ -67,12 +67,12 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Login to DHI registry (optional)
-        if: ${{ secrets.DHI_USERNAME != '' && secrets.DHI_PASSWORD != '' }}
+        if: ${{ startsWith(matrix.base_image, 'dhi.io/') }}
         uses: docker/login-action@v3
         with:
           registry: dhi.io
-          username: ${{ secrets.DHI_USERNAME }}
-          password: ${{ secrets.DHI_PASSWORD }}
+          username: ${{ secrets.DHI_USERNAME != '' && secrets.DHI_USERNAME || secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DHI_PASSWORD != '' && secrets.DHI_PASSWORD || secrets.DOCKERHUB_TOKEN }}
 
       - id: base
         name: Resolve hardened base digest
