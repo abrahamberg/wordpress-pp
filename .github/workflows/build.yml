@@ -12,9 +12,6 @@ env:
   IMAGE_NAME: abrahamberg/wordpress-pp
   PHP_TAG: "8.5"
   WP_CLI_VERSION: "2.10.0"
-  # Default base image tags (update to match your DHI tag naming)
-  BASE_IMAGE_DEBIAN: dhi.io/php:${{ env.PHP_TAG }}-fpm
-  BASE_IMAGE_ALPINE: dhi.io/php:${{ env.PHP_TAG }}-fpm-alpine
 
 jobs:
   resolve:
@@ -44,10 +41,8 @@ jobs:
       matrix:
         include:
           - distro: debian
-            base_image: ${{ env.BASE_IMAGE_DEBIAN }}
             rolling_tags: latest,debian
           - distro: alpine
-            base_image: ${{ env.BASE_IMAGE_ALPINE }}
             rolling_tags: alpine
 
     steps:
@@ -60,6 +55,17 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      - id: base_image
+        name: Compute base image
+        run: |
+          set -euo pipefail
+          case '${{ matrix.distro }}' in
+            debian) BASE_IMAGE="dhi.io/php:${PHP_TAG}-fpm" ;;
+            alpine) BASE_IMAGE="dhi.io/php:${PHP_TAG}-fpm-alpine" ;;
+            *) echo "Unknown distro: ${{ matrix.distro }}" >&2; exit 1 ;;
+          esac
+          echo "base_image=$BASE_IMAGE" >> "$GITHUB_OUTPUT"
+
       - name: Login to Docker Hub
         uses: docker/login-action@v3
         with:
@@ -67,7 +73,7 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Login to DHI registry (optional)
-        if: ${{ startsWith(matrix.base_image, 'dhi.io/') }}
+        if: ${{ startsWith(steps.base_image.outputs.base_image, 'dhi.io/') }}
         uses: docker/login-action@v3
         with:
           registry: dhi.io
@@ -78,7 +84,7 @@ jobs:
         name: Resolve hardened base digest
         run: |
           set -euo pipefail
-          DIGEST="$(python scripts/resolve_base_digest.py --image '${{ matrix.base_image }}')"
+          DIGEST="$(python scripts/resolve_base_digest.py --image '${{ steps.base_image.outputs.base_image }}')"
           SHORT="${DIGEST#sha256:}"
           SHORT="${SHORT:0:12}"
           echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
@@ -140,7 +146,7 @@ jobs:
           push: true
           platforms: linux/amd64,linux/arm64
           build-args: |
-            BASE_IMAGE=${{ matrix.base_image }}
+            BASE_IMAGE=${{ steps.base_image.outputs.base_image }}
             WORDPRESS_VERSION=${{ needs.resolve.outputs.wp_version }}
             WORDPRESS_SHA1=${{ needs.resolve.outputs.wp_sha1 }}
             WP_CLI_VERSION=${{ env.WP_CLI_VERSION }}
