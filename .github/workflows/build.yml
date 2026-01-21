@@ -53,8 +53,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -83,8 +84,26 @@ jobs:
           echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
           echo "short=$SHORT" >> "$GITHUB_OUTPUT"
 
+      - id: published
+        name: Skip build if already published
+        run: |
+          set -euo pipefail
+          WP_VERSION='${{ needs.resolve.outputs.wp_version }}'
+          DISTRO='${{ matrix.distro }}'
+          BASE_SHORT='${{ steps.base.outputs.short }}'
+
+          IMMUTABLE='${{ env.IMAGE_NAME }}:'"${WP_VERSION}-${DISTRO}-base-${BASE_SHORT}"
+          echo "immutable=$IMMUTABLE" >> "$GITHUB_OUTPUT"
+
+          if docker buildx imagetools inspect "$IMMUTABLE" >/dev/null 2>&1; then
+            echo "build_needed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "build_needed=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - id: tags
         name: Compute tags
+        if: ${{ steps.published.outputs.build_needed == 'true' }}
         run: |
           set -euo pipefail
           WP_VERSION='${{ needs.resolve.outputs.wp_version }}'
@@ -108,7 +127,12 @@ jobs:
           printf '%s\n' "${TAGS[@]}" >> "$GITHUB_OUTPUT"
           printf 'EOF\n' >> "$GITHUB_OUTPUT"
 
+      - name: Set up QEMU
+        if: ${{ steps.published.outputs.build_needed == 'true' }}
+        uses: docker/setup-qemu-action@v3
+
       - name: Build and push (${{ matrix.distro }})
+        if: ${{ steps.published.outputs.build_needed == 'true' }}
         uses: docker/build-push-action@v6
         with:
           context: .
